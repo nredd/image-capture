@@ -1,12 +1,19 @@
 [package]
-name = "icc-ptp-safe"
+name = "image-capture"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
-repository = "https://github.com/nredd/icc-ptp-safe"
+repository = "https://github.com/nredd/image-capture"
 license = "MIT"
-description = "Owned ImageCaptureCore PTP session boundary"
-publish = false
+description = "Owned ImageCaptureCore camera sessions over PTP for macOS"
+readme = "README.md"
+keywords = ["imagecapturecore", "ptp", "macos", "camera", "ffi"]
+categories = ["api-bindings", "os::macos-apis", "hardware-support"]
+exclude = [".github/"]
+
+[package.metadata.docs.rs]
+default-target = "aarch64-apple-darwin"
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "=0.6.2"

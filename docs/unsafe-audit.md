@@ -1,6 +1,6 @@
 # Native unsafe inventory
 
-Candidate inventory, NOT independent approval. Hardware entry remains prohibited until the parent auditor admits an exact signed candidate. `native-contract.md` is the normative ownership contract. Portable `client`, `driver`, `framing`, `events`, `ingress` and `lifecycle` modules each forbid unsafe code. No native object has an unsafe Send/Sync implementation; no safety lint is waived.
+This is the unsafe-site inventory that an AI-assisted independent source review (not a certification or formal audit) was run against main commit `69d36260c52719d8b6764aeb3fbe36a6858df3dc` (identical tree to the pre-squash source `21df87991d833cd046fd5f9b74cd7451ab0aa257`); `src/` is byte-identical to that source. Hardware execution still requires explicit owner admission. `native-contract.md` is the normative ownership contract. Portable `client`, `driver`, `framing`, `events`, `ingress` and `lifecycle` modules each forbid unsafe code. No native object has an unsafe Send/Sync implementation; no safety lint is waived.
 
 ## Selected sources and build
 
@@ -11,7 +11,7 @@ Candidate inventory, NOT independent approval. Hardware entry remains prohibited
 
 ## Unsafe site map
 
-Every unsafe expression, impl and method annotation is covered below. Function/selector anchors remain stable across formatting; `grep -n unsafe src/native*.rs` supplies exact candidate line numbers. All entries await independent review.
+Every unsafe expression, impl and method annotation is covered below. Function/selector anchors remain stable across formatting; `grep -n unsafe src/native*.rs` supplies exact line numbers. The AI-assisted source review covered these entries; it is not a certification or formal audit.
 
 | Site | Exact obligation and source |
 | --- | --- |
@@ -46,7 +46,7 @@ Every unsafe expression, impl and method annotation is covered below. Function/s
 5. Client wait/drop never frees NativePending. One bounded owner-retained wait-interest token outlives reply delivery; a Timeout store after reply publication still requests closure. Post-receive admission rechecks old interest before replacing it, relying on the non-cloneable client's serial request ordering, not a disappearing pending record. Driver records pending state before backend submission, processes completion separately from events, waits for pending work before close, and quarantines failed close/removal. A missing callback or failed close can block the joined runtime indefinitely. Scoped worker ownership guarantees joining even during Rust unwinding; NativeOwner's fallback Drop retains its ONE unresolved graph on unexpected unwind instead of freeing callback-reachable inputs. Foreign callback quiescence is NOT claimed by joining owned worker execution.
 6. Completion ingress has one slot, independent of events. Driver permits one unresolved request and consumes its completion before the next. A full completion slot sets a sticky independent atomic fault, observed by the owner even when no completion can queue. It reports CallbackFailure and quarantines without treating the fault as cancellation; unresolved native graph/input ownership remains. Production session/PTP block tests deliberately exercise this path. Wrapper buffers/queues are bounded, not framework allocations or foreign retention. Rust OOM aborts are outside recoverable error handling.
 
-## Independent audit questions
+## Questions a renewed review must repeat
 
 - Admit the exact generated ABI/nullability/BOOL encodings and every method annotation, including unrequested thumbnail/metadata callbacks.
 - Confirm the trusted asynchronous block validity assumption and accepted ordinary input-completion semantics (last use ended OR ICC owns later use); do not claim stronger header proof. Check fresh final admission and definite-not-submitted withdrawal.
@@ -54,6 +54,6 @@ Every unsafe expression, impl and method annotation is covered below. Function/s
 - Confirm main-thread confinement, exact selection/capability preconditions, input retention, retained timeout-interest handoff and serial replacement, close/quarantine/reopen transitions, overflow-fault quarantine, unwind keepalive and scoped join paths.
 - Confirm bounds and source/license feature union. Controlled blocks and production-driver tests are evidence of behavior, not proof of framework safety.
 
-The first callback buffer is interpreted as data and the second as a PTP response. Header names and the earlier sanitized experiment support this, but it remains a per-device validation hypothesis for the admitted read-only trial, not a universal protocol guarantee.
+The first callback buffer is interpreted as data and the second as a PTP response. Header names, the earlier sanitized experiment and the one short real-camera sample (a GetDeviceInfo response of `0x2001`) are consistent with this, but it remains a per-device hypothesis, not a universal protocol guarantee.
 
-No hardware, helper termination, native settings changes, root action, tag, registry upload or visibility change is part of this gate.
+`make all` and CI run no hardware, helper termination, native settings changes or root action. Further hardware execution requires explicit owner admission.

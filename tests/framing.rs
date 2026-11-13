@@ -1,6 +1,6 @@
 //! Portable container framing regression tests.
 
-use icc_ptp_safe::framing::{FramingError, Response, command, response};
+use image_capture::framing::{FramingError, Response, command, response};
 use proptest::prelude::*;
 
 #[test]
