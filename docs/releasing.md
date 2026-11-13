@@ -37,8 +37,8 @@ it for a short-lived token. All actions are pinned to full commit SHAs.
 - Bump `version` in `Cargo.toml` and `Cargo.lock`, add a `CHANGELOG.md` section for it, and merge a reviewed, gated PR
 - Create and push `v<version>` at that exact commit on `main`. Tags cannot be reused; mistakes need a new version
 - `gate` checks the commit is an ancestor of `origin/main`, the tag matches the `Cargo.toml` version, runs `make all` and `cargo publish --dry-run --locked`, and uploads the `.crate`
-- `publish` waits for environment approval, rebuilds the archive, requires it to be byte-identical to the gated one with `cmp`, authenticates via OIDC and runs `cargo publish --locked`
-- `github-release` creates a draft with the archive, then publishes it. Release notes are `CHANGELOG.md`
+- `publish` and `github-release` both use the `crates-io` environment, so each waits for approval. `publish` waits first, rebuilds the archive, requires it to be byte-identical to the gated one with `cmp`, authenticates via OIDC and runs `cargo publish --locked`
+- `github-release` creates a draft with the archive, then publishes it. Release notes are the `CHANGELOG.md` section whose heading is `## [<version>]`; the job fails if it is missing
 
 ## Failure and recovery
 

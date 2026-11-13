@@ -11,6 +11,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: target
   CARGO_BUILD_JOBS: 2
+  RUST_TOOLCHAIN: 1.99.1
   MACOSX_DEPLOYMENT_TARGET: '13.0'
 jobs:
   gate:
@@ -31,7 +32,7 @@ jobs:
         run: git merge-base --is-ancestor HEAD origin/main
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: 1.99.1
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
@@ -67,7 +68,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: 1.99.1
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: crate-${{ github.sha }}
@@ -103,7 +104,12 @@ jobs:
           name: crate-${{ github.sha }}
           path: ${{ runner.temp }}/gated-package
       # Existing drafts/releases fail closed. No --clobber, deletion or tag rewriting.
+      - name: Release notes are the tagged version's changelog section
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '/^## \[/ { on = index($0, "## [" v "]") == 1; next } on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          test -s "$RUNNER_TEMP/notes.md"
       - name: Stage every asset before immutable publication
-        run: gh release create "$TAG" "$RUNNER_TEMP"/gated-package/*.crate --draft --verify-tag --target "$COMMIT" --title "$TAG" --notes-file CHANGELOG.md
+        run: gh release create "$TAG" "$RUNNER_TEMP"/gated-package/*.crate --draft --verify-tag --target "$COMMIT" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
       - name: Publish the fully staged draft
         run: gh release edit "$TAG" --draft=false
