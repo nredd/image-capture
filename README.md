@@ -32,10 +32,10 @@ The worker calls `discover(window, timeout)`, selects an exact `DeviceId`, and c
 
 Run `make all` with stable Rust, rustfmt, clippy and cargo-deny 0.20.2. Set `CARGO_TARGET_DIR` for external build storage; builds default to two workers. The gate checks format, strict pedantic clippy, all targets, portable and macOS controlled callback tests, warning-free docs, licenses/advisories, the real compiled example, packaging, extracted tests and a separate extracted-package consumer. The example's default nonhardware path also runs. CI covers Linux portable modules and macOS controlled native code, never cameras.
 
-`docs/native-contract.md` records ownership and trusted assumptions. `docs/unsafe-audit.md` maps every native unsafe site, selected SDK, pinned bindings and audit questions. Tests exercise production driver/block code, but neither tests nor coverage replace independent native safety audit. Hardware validation is a separate admission gate, not implied by `make all`. Releases are described in `docs/releasing.md`.
+`docs/native-contract.md` records ownership and trusted assumptions. `docs/unsafe-audit.md` maps every native unsafe site, selected SDK, pinned bindings and the questions a renewed review must repeat. Tests exercise production driver/block code, but neither tests nor coverage replace independent native safety audit. Hardware validation is a separate admission gate, not implied by `make all`. Releases are described in `docs/releasing.md`.
 
 Signing/permissions, LaunchAgent execution, screen lock, physical reconnect, callback liveness and worker/owner behavior under real hardware failures remain unverified, as do timeouts, missing callbacks, disconnect and endurance on real hardware. No production support claim follows from a short sample or the earlier separate Swift experiment.
 
 ## License
 
-MIT, see `LICENSE`. Apple frameworks are system dependencies, not redistributed code. Pinned Rust dependency licenses are checked by `cargo deny`; see the audit inventory for feature scope.
+MIT, see `LICENSE`. Apple frameworks are system dependencies, not redistributed code. Pinned Rust dependency licenses are checked by `cargo deny`; see the unsafe-site inventory for feature scope.
