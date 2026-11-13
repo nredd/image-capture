@@ -1,6 +1,13 @@
 # icc-ptp-safe
 
-Private, experimental Rust ImageCaptureCore boundary. The macOS adapter implements discovery, exact selection, owned session leases, serialized PTP, bounded advisory events, close and same-runtime reopen. It has NOT yet received independent native audit or Rust hardware validation. Keep this repository private; registry publication, release tags and visibility changes are not authorized.
+Experimental Rust ImageCaptureCore boundary. The macOS adapter implements discovery, exact selection, owned session leases, serialized PTP, bounded advisory events, close and same-runtime reopen.
+
+Established so far:
+
+- An AI-assisted independent source review of the native code. The unsafe-site inventory is `docs/unsafe-audit.md`. This is NOT a certification or a formal audit
+- ONE short real-camera sample at source `21df87991d833cd046fd5f9b74cd7451ab0aa257` (tree-identical to the release source): discovery found one candidate, then two open / GetDeviceInfo (operation `0x1001`, response `0x2001`) / confirmed-close cycles ran in one process, with a same-process reopen. The runtime joined and the Apple camera helpers were left untouched
+
+Everything else is unverified, see the limits below. No production support claim follows.
 
 ## Use
 
@@ -10,7 +17,7 @@ The worker calls `discover(window, timeout)`, selects an exact `DeviceId`, and c
 
 `Session::close` waits for confirmed closure; dropping a lease requests close without blocking the worker. After confirmed close, the same runtime can open another session. Only ONE native runtime may ever be constructed per process, including after failure. No native object is `Send` or `Sync`.
 
-`examples/device_info.rs` is a real compiled consumer that discovers an explicitly selected camera, runs GetDeviceInfo, closes, reopens and repeats. Running it without arguments does NOT start ICC. Only the designated hardware owner, after independent native audit and explicit execution admission, may supply `--hardware-admitted` and an exact identifier. Do not put device identities or returned DeviceInfo bytes in shared logs. CI never passes that flag.
+`examples/device_info.rs` is a real compiled consumer that discovers an explicitly selected camera, runs GetDeviceInfo, closes, reopens and repeats. Running it without arguments does NOT start ICC. Only the designated hardware owner, with explicit execution admission, may supply `--hardware-admitted` and an exact identifier. Do not put device identities or returned DeviceInfo bytes in shared logs. CI never passes that flag.
 
 ## Limits and cancellation
 
@@ -25,9 +32,9 @@ The worker calls `discover(window, timeout)`, selects an exact `DeviceId`, and c
 
 Run `make all` with stable Rust, rustfmt, clippy and cargo-deny 0.20.2. Set `CARGO_TARGET_DIR` for external build storage; builds default to two workers. The gate checks format, strict pedantic clippy, all targets, portable and macOS controlled callback tests, warning-free docs, licenses/advisories, the real compiled example, packaging, extracted tests and a separate extracted-package consumer. The example's default nonhardware path also runs. CI covers Linux portable modules and macOS controlled native code, never cameras.
 
-`docs/native-contract.md` records ownership and trusted assumptions. `docs/unsafe-audit.md` maps every native unsafe site, selected SDK, pinned bindings and audit questions. Tests exercise production driver/block code, but neither tests nor coverage replace independent native safety audit. Hardware validation is a separate admission gate, not implied by `make all`.
+`docs/native-contract.md` records ownership and trusted assumptions. `docs/unsafe-audit.md` maps every native unsafe site, selected SDK, pinned bindings and audit questions. Tests exercise production driver/block code, but neither tests nor coverage replace independent native safety audit. Hardware validation is a separate admission gate, not implied by `make all`. Releases are described in `docs/releasing.md`.
 
-Signing/permissions, LaunchAgent execution, screen lock, physical reconnect, callback liveness and worker/owner behavior under real hardware failures remain unverified. No production support claim follows from a short sample or the earlier separate Swift experiment.
+Signing/permissions, LaunchAgent execution, screen lock, physical reconnect, callback liveness and worker/owner behavior under real hardware failures remain unverified, as do timeouts, missing callbacks, disconnect and endurance on real hardware. No production support claim follows from a short sample or the earlier separate Swift experiment.
 
 ## License
 

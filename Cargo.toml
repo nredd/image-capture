@@ -6,7 +6,14 @@ rust-version = "1.99"
 repository = "https://github.com/nredd/icc-ptp-safe"
 license = "MIT"
 description = "Owned ImageCaptureCore PTP session boundary"
-publish = false
+readme = "README.md"
+keywords = ["imagecapturecore", "ptp", "macos", "camera", "ffi"]
+categories = ["api-bindings", "os::macos-apis", "hardware-support"]
+exclude = [".github/"]
+
+[package.metadata.docs.rs]
+default-target = "aarch64-apple-darwin"
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "=0.6.2"
