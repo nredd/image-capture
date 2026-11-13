@@ -1,0 +1,8 @@
+[package]
+name = "icc-owned-consumer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+icc-ptp-safe = { path = "../icc-ptp-safe-0.1.0" }
