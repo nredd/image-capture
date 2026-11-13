@@ -1,6 +1,6 @@
 # Native unsafe inventory
 
-This is the unsafe-site inventory that an AI-assisted independent source review (not a certification or formal audit) was run against at source `21df87991d833cd046fd5f9b74cd7451ab0aa257`; `src/` is byte-identical since then. Hardware execution still requires explicit owner admission. `native-contract.md` is the normative ownership contract. Portable `client`, `driver`, `framing`, `events`, `ingress` and `lifecycle` modules each forbid unsafe code. No native object has an unsafe Send/Sync implementation; no safety lint is waived.
+This is the unsafe-site inventory that an AI-assisted independent source review (not a certification or formal audit) was run against main commit `69d36260c52719d8b6764aeb3fbe36a6858df3dc` (identical tree to the pre-squash source `21df87991d833cd046fd5f9b74cd7451ab0aa257`); `src/` is byte-identical to that source. Hardware execution still requires explicit owner admission. `native-contract.md` is the normative ownership contract. Portable `client`, `driver`, `framing`, `events`, `ingress` and `lifecycle` modules each forbid unsafe code. No native object has an unsafe Send/Sync implementation; no safety lint is waived.
 
 ## Selected sources and build
 

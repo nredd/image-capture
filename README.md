@@ -1,11 +1,11 @@
 # image-capture
 
-Safe, owned ImageCaptureCore camera sessions over PTP for macOS. This crate is a safe owned-session layer built on the `objc2-image-capture-core` bindings. It covers camera discovery and PTP sessions only, not the whole framework, and is not affiliated with the unrelated older `image-capture-core` crate. It is experimental. The macOS adapter implements discovery, exact selection, owned session leases, serialized PTP, bounded advisory events, close and same-runtime reopen.
+A safe Rust API for owned ImageCaptureCore camera sessions over PTP on macOS. This crate is a safe owned-session layer built on the `objc2-image-capture-core` bindings. It covers camera discovery and PTP sessions only, not the whole framework, and is not affiliated with the unrelated older `image-capture-core` crate. It is experimental. The macOS adapter implements discovery, exact selection, owned session leases, serialized PTP, bounded advisory events, close and same-runtime reopen.
 
 Established so far:
 
 - An AI-assisted independent source review of the native code. The unsafe-site inventory is `docs/unsafe-audit.md`. This is NOT a certification or a formal audit
-- ONE short real-camera sample at source `21df87991d833cd046fd5f9b74cd7451ab0aa257` (tree-identical to main commit `69d36260c52719d8b6764aeb3fbe36a6858df3dc`; `src/` is byte-identical since then, `tests/`, `examples/` and `Cargo.lock` differ only by the crate rename, while README, manifest metadata, docs and CI also differ): discovery found one candidate, then two open / GetDeviceInfo (operation `0x1001`, response `0x2001`) / confirmed-close cycles ran in one process, with a same-process reopen. The runtime joined and the Apple camera helpers were left untouched
+- ONE short real-camera sample at main commit `69d36260c52719d8b6764aeb3fbe36a6858df3dc` (resolves on `main`; the pre-squash source `21df87991d833cd046fd5f9b74cd7451ab0aa257` has the identical tree but is not an ancestor of `main` (it stays reachable through pull request #2). `src/` is byte-identical to that source; `tests/`, `examples/` and `Cargo.lock` differ only by the crate rename; everything else outside `src/` may differ): discovery found one candidate, then two open / GetDeviceInfo (operation `0x1001`, response `0x2001`) / confirmed-close cycles ran in one process, with a same-process reopen. The runtime joined and the Apple camera helpers were left untouched
 
 Everything else is unverified, see the limits below. No production support claim follows.
 

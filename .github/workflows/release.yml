@@ -108,7 +108,7 @@ jobs:
         run: |
           version="${TAG#v}"
           awk -v v="$version" '/^## \[/ { on = index($0, "## [" v "]") == 1; next } on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
-          test -s "$RUNNER_TEMP/notes.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"
       - name: Stage every asset before immutable publication
         run: gh release create "$TAG" "$RUNNER_TEMP"/gated-package/*.crate --draft --verify-tag --target "$COMMIT" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
       - name: Publish the fully staged draft
