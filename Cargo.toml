@@ -1,0 +1,27 @@
+[package]
+name = "icc-ptp-safe"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+repository = "https://github.com/nredd/icc-ptp-safe"
+license = "MIT"
+description = "Owned ImageCaptureCore PTP session boundary"
+publish = false
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "=0.6.2"
+objc2 = "=0.6.4"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSError", "NSObject", "NSString", "NSDate", "NSRunLoop", "NSObjCRuntime"] }
+objc2-image-capture-core = { version = "=0.3.2", default-features = false, features = ["std", "block2", "ICDevice", "ICDeviceBrowser", "ICCameraDevice", "ICCameraItem", "objc2-core-graphics"] }
+objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["std", "CGImage"] }
+
+[dev-dependencies]
+proptest = "=1.9.0"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
