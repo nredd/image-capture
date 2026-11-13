@@ -4,7 +4,7 @@
 //! Missing callbacks or quarantined closure can keep it blocked indefinitely.
 use crate::{
     client::{self, Client, DeviceId, Error, MAX_DEVICES, MAX_ID_BYTES},
-    driver::{Backend, Driver},
+    driver::{Admission, Backend, Driver},
     events::{Event, EventSender, event_channel},
     ingress::{CompletionSender, completion_channel},
     lifecycle::RequestId,
@@ -47,6 +47,7 @@ struct DelegateIngress {
     removed: AtomicBool,
 }
 impl DelegateIngress {
+    /// Publish bounded owned observation bytes while connected; never use owner state.
     fn event(&self, bytes: Vec<u8>) {
         if let Ok(events) = self.events.lock()
             && let Some(sender) = &*events
@@ -54,12 +55,14 @@ impl DelegateIngress {
             let _ = sender.publish(Event(bytes));
         }
     }
+    /// Serialize disconnect against publication and release the event sender.
     fn disconnect(&self) {
         if let Ok(mut events) = self.events.lock() {
             *events = None;
         }
     }
 }
+/// Publish a nonidentifying delegate observation, never a request completion.
 fn advisory(tag: u8) {
     if let Some(ingress) = DELEGATE_INGRESS.get() {
         ingress.event(vec![tag]);
@@ -179,6 +182,7 @@ struct NativePending {
     _command: Option<Retained<NSData>>,
     _outgoing: Option<Retained<NSData>>,
 }
+/// Main-thread-only graph, retained until completion and confirmed closure.
 struct NativeOwner {
     browser: Retained<ICDeviceBrowser>,
     proxy: &'static DelegateProxy,
@@ -188,6 +192,7 @@ struct NativeOwner {
     _main_thread: PhantomData<Rc<()>>,
 }
 impl NativeOwner {
+    /// Construct the single browser after run's main-thread/process admission.
     fn new(ingress: Arc<DelegateIngress>) -> Self {
         // SAFETY: NSObject init is valid for this stateless NSObject subclass.
         let proxy: Retained<DelegateProxy> = unsafe { msg_send![DelegateProxy::alloc(), init] };
@@ -215,6 +220,7 @@ impl NativeOwner {
             _main_thread: PhantomData,
         }
     }
+    /// Snapshot bounded retained cameras and copy only bounded exact identifiers.
     fn cameras(&self) -> Result<Vec<(DeviceId, Retained<ICCameraDevice>)>, Error> {
         // SAFETY: Browser is owned and accessed only on main. The binding retains
         // the returned array. Entries are checked via safe dynamic downcast.
@@ -243,6 +249,7 @@ impl NativeOwner {
         }
         Ok(cameras)
     }
+    /// Disconnect observations and stop discovery after confirmed Idle shutdown.
     fn finish(&mut self) {
         self.ingress.disconnect();
         // SAFETY: Main-thread owned browser, no native operation remains. Stop is
@@ -265,9 +272,11 @@ impl Drop for NativeOwner {
     }
 }
 impl Backend for NativeOwner {
+    /// Return owned identifiers without exposing retained native objects.
     fn devices(&self) -> Result<Vec<DeviceId>, Error> {
         Ok(self.cameras()?.into_iter().map(|(id, _)| id).collect())
     }
+    /// Retain exactly one matching device and install the immortal delegate.
     fn select(&mut self, id: &DeviceId) -> Result<(), Error> {
         let mut matches = self
             .cameras()?
@@ -285,7 +294,13 @@ impl Backend for NativeOwner {
         self.camera = Some(camera);
         Ok(())
     }
-    fn open(&mut self, id: RequestId, sender: &CompletionSender) {
+    /// Retain open completion before final admission and possible reentrancy.
+    fn open(
+        &mut self,
+        id: RequestId,
+        sender: &CompletionSender,
+        admission: Admission<'_>,
+    ) -> Result<(), Error> {
         let block = session_block(sender.request(id));
         self.pending = Some(NativePending {
             _session: Some(block.clone()),
@@ -293,15 +308,17 @@ impl Backend for NativeOwner {
             _command: None,
             _outgoing: None,
         });
-        if let Some(camera) = &self.camera {
-            // SAFETY: Owner registered Opening and retained the heap block before
-            // submission. Null options need no dictionary generic invariants.
-            // ICC is trusted to keep async block invocations valid on any queue.
-            unsafe {
-                camera.requestOpenSessionWithOptions_completion(None, &block);
-            }
+        let camera = self.camera.as_ref().ok_or(Error::Busy)?;
+        admission.check()?;
+        // SAFETY: Owner registered Opening and retained the heap block before
+        // submission. Null options need no dictionary generic invariants.
+        // ICC is trusted to keep async block invocations valid on any queue.
+        unsafe {
+            camera.requestOpenSessionWithOptions_completion(None, &block);
         }
+        Ok(())
     }
+    /// Check the selected camera's current bounded PTP capability list.
     fn validate_command(&self) -> Result<(), Error> {
         let camera = self.camera.as_ref().ok_or(Error::Busy)?;
         // SAFETY: Retained camera on the owner thread; ICC declares the array
@@ -316,13 +333,15 @@ impl Backend for NativeOwner {
         }
         Ok(())
     }
+    /// Copy/retain inputs and callback before final admission; Err means no submission.
     fn command(
         &mut self,
         id: RequestId,
         sender: &CompletionSender,
         command: &[u8],
         outgoing: &[u8],
-    ) {
+        admission: Admission<'_>,
+    ) -> Result<(), Error> {
         let command = NSData::with_bytes(command);
         let outgoing = (!outgoing.is_empty()).then(|| NSData::with_bytes(outgoing));
         // SAFETY: This block is passed only to ICC's declared completion API,
@@ -334,20 +353,25 @@ impl Backend for NativeOwner {
             _command: Some(command.clone()),
             _outgoing: outgoing.clone(),
         });
-        if let Some(camera) = &self.camera {
-            // SAFETY: Open session, one registered request, main-thread access.
-            // Native inputs are immutable copies retained through completion.
-            // ICC owns async block validity; captures contain only Send ingress.
-            unsafe {
-                camera.requestSendPTPCommand_outData_completion(
-                    &command,
-                    outgoing.as_deref(),
-                    &block,
-                );
-            }
+        let camera = self.camera.as_ref().ok_or(Error::Busy)?;
+        admission.check()?;
+        // SAFETY: Open session, one registered request, main-thread access.
+        // Native inputs are immutable copies retained through completion, at
+        // which point ICC has ended use OR independently owns any later use.
+        // This is trusted API semantics, not stronger header last-use proof.
+        // ICC owns async block validity; captures contain only Send ingress.
+        unsafe {
+            camera.requestSendPTPCommand_outData_completion(&command, outgoing.as_deref(), &block);
         }
+        Ok(())
     }
-    fn close(&mut self, id: RequestId, sender: &CompletionSender) {
+    /// Retain close callback before final admission; cleanup close never expires.
+    fn close(
+        &mut self,
+        id: RequestId,
+        sender: &CompletionSender,
+        admission: Option<Admission<'_>>,
+    ) -> Result<(), Error> {
         let block = session_block(sender.request(id));
         self.pending = Some(NativePending {
             _session: Some(block.clone()),
@@ -355,20 +379,26 @@ impl Backend for NativeOwner {
             _command: None,
             _outgoing: None,
         });
-        if let Some(camera) = &self.camera {
-            // SAFETY: Closing is installed before submission, prior request has
-            // settled, and native owner/block retention matches open above.
-            unsafe {
-                camera.requestCloseSessionWithOptions_completion(None, &block);
-            }
+        let camera = self.camera.as_ref().ok_or(Error::Busy)?;
+        if let Some(admission) = admission {
+            admission.check()?;
         }
+        // SAFETY: Closing is installed before submission, prior request has
+        // settled, and native owner/block retention matches open above.
+        unsafe {
+            camera.requestCloseSessionWithOptions_completion(None, &block);
+        }
+        Ok(())
     }
+    /// Release wrapper request retention after completion or proven non-submission.
     fn settled(&mut self) {
         self.pending = None;
     }
+    /// Release the selected device only after the controller reaches Idle.
     fn release_camera(&mut self) {
         self.camera = None;
     }
+    /// Observe sticky removal without dereferencing a callback-native object.
     fn disconnected(&self) -> bool {
         self.ingress.removed.load(Ordering::Acquire)
     }

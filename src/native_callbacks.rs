@@ -11,6 +11,7 @@ use objc2_foundation::{NSData, NSError};
 
 use crate::ingress::CallbackIngress;
 
+/// Pinned ICC block ABI: hypothesized data, PTP response, then nullable error.
 pub(crate) type PtpCompletion = dyn Fn(NonNull<NSData>, NonNull<NSData>, *mut NSError);
 
 /// Maximum callback data copied by this experimental adapter.
@@ -26,6 +27,8 @@ pub const MAX_RESPONSE_BYTES: usize = 32;
 pub fn session_block(ingress: CallbackIngress) -> RcBlock<dyn Fn(*mut NSError)> {
     RcBlock::new(thread_safe(move |error: *mut NSError| {
         if let Some(claim) = ingress.claim() {
+            // Publish records a sticky owner-observable fault on Full; no
+            // callback may cancel or release native ownership on delivery error.
             let _ = claim.publish(vec![u8::from(!error.is_null())]);
         }
     }))
@@ -81,6 +84,7 @@ pub unsafe fn ptp_block(ingress: CallbackIngress) -> RcBlock<PtpCompletion> {
                 payload.extend_from_slice(&data_bytes);
                 payload
             }));
+            // Full records a sticky independent ingress fault for quarantine.
             let _ = claim.publish(result.unwrap_or_else(|_| vec![3]));
         },
     ))

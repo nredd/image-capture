@@ -18,25 +18,73 @@ use std::{
     time::Instant,
 };
 
-/// Native access stays behind this owner-thread-only interface.
+/// Latest admission decision, checked AFTER native block/input preparation.
+#[derive(Clone, Copy)]
+pub(crate) struct Admission<'a> {
+    until: Instant,
+    abandoned: &'a AtomicBool,
+}
+impl<'a> Admission<'a> {
+    /// Borrow interest without retaining the request payload in a native block.
+    fn new(request: &'a Request) -> Self {
+        Self {
+            until: request.admit_by,
+            abandoned: &request.abandoned,
+        }
+    }
+    /// Check a fresh clock immediately before the prepared native submission.
+    pub fn check(self) -> Result<(), Error> {
+        if Instant::now() >= self.until || self.abandoned.load(Ordering::Acquire) {
+            Err(Error::AdmissionExpired)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Owner-thread-only native boundary. Submission methods install retained inputs
+/// and heap blocks, then check admission immediately before calling ICC. `Err`
+/// MUST mean definitely NOT submitted; only then may the driver withdraw state.
+/// `Ok` may include a reentrant completion. Never send native objects to a worker.
 pub(crate) trait Backend {
+    /// Snapshot bounded owned identifiers on the native owner thread.
     fn devices(&self) -> Result<Vec<DeviceId>, Error>;
+    /// Retain exactly one selected camera without opening it.
     fn select(&mut self, id: &DeviceId) -> Result<(), Error>;
-    fn open(&mut self, id: RequestId, sender: &CompletionSender);
+    /// Prepare retained open state, check fresh admission, then submit once.
+    fn open(
+        &mut self,
+        id: RequestId,
+        sender: &CompletionSender,
+        admission: Admission<'_>,
+    ) -> Result<(), Error>;
+    /// Check current capabilities before preparing a serialized command.
     fn validate_command(&self) -> Result<(), Error>;
+    /// Retain copied immutable inputs/block, check fresh admission, submit once.
     fn command(
         &mut self,
         id: RequestId,
         sender: &CompletionSender,
         command: &[u8],
         outgoing: &[u8],
-    );
-    fn close(&mut self, id: RequestId, sender: &CompletionSender);
+        admission: Admission<'_>,
+    ) -> Result<(), Error>;
+    /// Prepare close before checking admission. Cleanup close has no deadline.
+    fn close(
+        &mut self,
+        id: RequestId,
+        sender: &CompletionSender,
+        admission: Option<Admission<'_>>,
+    ) -> Result<(), Error>;
+    /// Drop native request inputs/blocks only after completion or proven non-submission.
     fn settled(&mut self);
+    /// Release the camera only in Idle, with no unresolved native request.
     fn release_camera(&mut self);
+    /// Observe a sticky removal signal without settling any request.
     fn disconnected(&self) -> bool;
 }
 
+/// Serialized production controller; native ownership stays inside its backend.
 pub(crate) struct Driver<B> {
     pub backend: B,
     lifecycle: Lifecycle,
@@ -46,10 +94,15 @@ pub(crate) struct Driver<B> {
     pending: Option<Request>,
     discovery: Option<(Instant, Request)>,
     lease: Option<Arc<AtomicBool>>,
+    // Keep timeout interest after reply delivery until the next serial request
+    // or confirmed close. No native graph or request payload is retained here.
+    wait_interest: Option<Arc<AtomicBool>>,
     next: u64,
     stopping: bool,
+    fault_reported: bool,
 }
 impl<B: Backend> Driver<B> {
+    /// Construct one controller with independent bounded request/completion queues.
     pub fn new(
         backend: B,
         requests: Receiver<Request>,
@@ -65,22 +118,33 @@ impl<B: Backend> Driver<B> {
             pending: None,
             discovery: None,
             lease: None,
+            wait_interest: None,
             next: 0,
             stopping: false,
+            fault_reported: false,
         }
     }
+    /// Allocate a process-runtime-wide identity without wrapping or reuse.
     fn identity(&mut self) -> Result<RequestId, Error> {
         self.next = self.next.checked_add(1).ok_or(Error::IdentityExhausted)?;
         Ok(RequestId(self.next))
     }
+    /// Stop admission and request closure without cancelling native work.
     pub fn stop(&mut self) {
         self.stopping = true;
     }
+    /// Permit owner teardown only after pending work and confirmed closure.
     pub fn finished(&self) -> bool {
         self.stopping && self.lifecycle.phase() == Phase::Idle && self.pending.is_none()
     }
+    /// Observe lease drop and timeout interest, including after reply publication.
     fn closing(&self) -> bool {
         self.stopping
+            || self.lifecycle.needs_close()
+            || self
+                .wait_interest
+                .as_ref()
+                .is_some_and(|interest| interest.load(Ordering::Acquire))
             || self
                 .lease
                 .as_ref()
@@ -90,6 +154,7 @@ impl<B: Backend> Driver<B> {
                 .as_ref()
                 .is_some_and(|request| request.abandoned.load(Ordering::Acquire))
     }
+    /// Register a caller or cleanup close before entering potentially reentrant ICC.
     fn begin_close(&mut self, request: Option<Request>) {
         let Ok(id) = self.identity() else {
             self.lifecycle.disconnect();
@@ -102,10 +167,23 @@ impl<B: Backend> Driver<B> {
             return;
         }
         self.pending = request;
-        self.backend.close(id, &self.sender);
+        if let Err(error) =
+            self.backend
+                .close(id, &self.sender, self.pending.as_ref().map(Admission::new))
+        {
+            self.withdraw(id, error);
+        }
     }
+    /// Process bounded owner work; `now` is only an early rejection hint.
     pub fn tick(&mut self, now: Instant) {
-        if self.backend.disconnected() {
+        let faulted = self.sender.faulted();
+        if faulted && !self.fault_reported {
+            if let Some(request) = &self.pending {
+                let _ = request.reply.try_send(Err(Error::CallbackFailure));
+            }
+            self.fault_reported = true;
+        }
+        if self.backend.disconnected() || faulted {
             self.lifecycle.disconnect();
         }
         if self.closing() {
@@ -136,6 +214,7 @@ impl<B: Backend> Driver<B> {
             Err(TryRecvError::Empty) => {}
         }
     }
+    /// Register one request before backend entry; backend rechecks fresh admission.
     fn admit(&mut self, request: Request, now: Instant) {
         let error = if self.stopping {
             Some(Error::Disconnected)
@@ -143,6 +222,11 @@ impl<B: Backend> Driver<B> {
             Some(Error::AdmissionExpired)
         } else if self.lifecycle.phase() == Phase::Quarantined {
             Some(Error::Quarantined)
+        } else if self.closing() {
+            // Recheck AFTER receiving a new serial worker request. Its enqueue
+            // follows any previous Timeout store, so replacement cannot erase
+            // that retained interest even if tick's earlier sample missed it.
+            Some(Error::Busy)
         } else if self.pending.is_some()
             || self.discovery.is_some()
             || matches!(
@@ -180,8 +264,11 @@ impl<B: Backend> Driver<B> {
                     return;
                 }
                 self.lease = Some(Arc::clone(lease));
-                self.pending = Some(request);
-                self.backend.open(id, &self.sender);
+                self.wait_interest = Some(Arc::clone(&request.abandoned));
+                let request = self.pending.insert(request);
+                if let Err(error) = self.backend.open(id, &self.sender, Admission::new(request)) {
+                    self.withdraw(id, error);
+                }
             }
             Operation::Command(_, _) => {
                 if self.lifecycle.phase() != Phase::Open {
@@ -200,15 +287,22 @@ impl<B: Backend> Driver<B> {
                     let _ = request.reply.try_send(Err(Error::Busy));
                     return;
                 }
+                self.wait_interest = Some(Arc::clone(&request.abandoned));
                 // Install the reply/abandonment record BEFORE calling an adapter
                 // which may publish synchronously. The owned inputs stay in it.
-                self.pending = Some(request);
-                if let Some(Request {
-                    operation: Operation::Command(command, outgoing),
-                    ..
-                }) = &self.pending
-                {
-                    self.backend.command(id, &self.sender, command, outgoing);
+                let request = self.pending.insert(request);
+                let submission = match &request.operation {
+                    Operation::Command(command, outgoing) => self.backend.command(
+                        id,
+                        &self.sender,
+                        command,
+                        outgoing,
+                        Admission::new(request),
+                    ),
+                    _ => Err(Error::InvalidInput),
+                };
+                if let Err(error) = submission {
+                    self.withdraw(id, error);
                 }
             }
             Operation::Close => {
@@ -220,6 +314,21 @@ impl<B: Backend> Driver<B> {
             }
         }
     }
+    /// Withdraw ONLY a backend's definite-not-submitted rejection, never a timeout
+    /// of submitted work. The consumed identity is intentionally not reused.
+    fn withdraw(&mut self, id: RequestId, error: Error) {
+        self.lifecycle.withdraw(id);
+        self.backend.settled();
+        if let Some(request) = self.pending.take() {
+            let _ = request.reply.try_send(Err(error));
+        }
+        if self.lifecycle.phase() == Phase::Idle {
+            self.backend.release_camera();
+            self.lease = None;
+            self.wait_interest = None;
+        }
+    }
+    /// Settle only a matching request completion, independent of event delivery.
     fn complete(&mut self, completion: &Completion) {
         let phase = self.lifecycle.phase();
         if !matches!(phase, Phase::Opening(id) | Phase::Command(id) | Phase::Closing(id) if id == completion.id)
@@ -228,8 +337,9 @@ impl<B: Backend> Driver<B> {
         }
         let success = completion.payload.first() == Some(&0);
         let action = self.lifecycle.complete(completion.id, success);
-        // Completion denotes native last use of request inputs under the trusted
-        // ICC API contract. This does not imply final foreign block disposal.
+        // Trusted normal API semantics: ICC input last use ends at completion,
+        // OR ICC independently owns later use. Headers do not prove that timing.
+        // Neither interpretation implies final foreign block disposal.
         self.backend.settled();
         let result = if !success {
             Err(match completion.payload.first() {
@@ -253,6 +363,7 @@ impl<B: Backend> Driver<B> {
         if self.lifecycle.phase() == Phase::Idle {
             self.backend.release_camera();
             self.lease = None;
+            self.wait_interest = None;
         }
         if lost_interest {
             self.lifecycle.request_close();

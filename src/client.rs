@@ -107,6 +107,7 @@ impl Default for Timeout {
     }
 }
 impl Timeout {
+    /// Validate relative limits and derive monotonic admission/wait deadlines.
     fn deadlines(self) -> Result<(Instant, Instant), Error> {
         if self.admission.is_zero()
             || self.wait.is_zero()
@@ -132,18 +133,21 @@ pub struct CommandResult {
     pub data: Vec<u8>,
 }
 
+/// Owned worker operation. No variant contains a borrowed native value.
 pub(crate) enum Operation {
     Discover(Duration),
     Open(DeviceId, Arc<AtomicBool>),
     Command(Vec<u8>, Vec<u8>),
     Close,
 }
+/// Owned operation result, distinct from uncorrelated advisory events.
 pub(crate) enum Reply {
     Devices(Vec<DeviceId>),
     Opened,
     Command(CommandResult),
     Closed,
 }
+/// Bounded queued request; abandonment is observable independently of reply delivery.
 pub(crate) struct Request {
     pub operation: Operation,
     pub admit_by: Instant,
@@ -157,11 +161,14 @@ pub struct Client {
     events: EventReceiver,
 }
 impl Client {
+    /// Construct the sole portable endpoint with bounded request/event channels.
     #[cfg(any(target_os = "macos", test))]
     pub(crate) fn new(sender: SyncSender<Request>, events: EventReceiver) -> Self {
         Self { sender, events }
     }
 
+    /// Enqueue without blocking and wait without cancelling native work. Timeout
+    /// interest remains retained by the owner even if its reply was just queued.
     fn request(&mut self, operation: Operation, timeout: Timeout) -> Result<Reply, Error> {
         let (admit_by, wait_until) = timeout.deadlines()?;
         let (reply, received) = mpsc::sync_channel(1);
@@ -280,6 +287,7 @@ impl Drop for Session<'_> {
     }
 }
 
+/// Create a single-slot worker request queue, independent of completion capacity.
 #[cfg(target_os = "macos")]
 pub(crate) fn channel(events: EventReceiver) -> (Client, mpsc::Receiver<Request>) {
     let (sender, receiver) = mpsc::sync_channel(1);

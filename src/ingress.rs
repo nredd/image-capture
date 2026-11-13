@@ -40,27 +40,45 @@ pub struct CallbackIngress {
     id: RequestId,
     claimed: Arc<AtomicBool>,
     sender: SyncSender<Completion>,
+    faulted: Arc<AtomicBool>,
 }
 
 /// Create the dedicated single-slot completion channel.
 #[must_use]
 pub fn completion_channel() -> (CompletionSender, Receiver<Completion>) {
     let (sender, receiver) = mpsc::sync_channel(1);
-    (CompletionSender(sender), receiver)
+    (
+        CompletionSender {
+            sender,
+            faulted: Arc::new(AtomicBool::new(false)),
+        },
+        receiver,
+    )
 }
 
 /// Factory for independent request-specific ingress handles.
 #[derive(Clone, Debug)]
-pub struct CompletionSender(SyncSender<Completion>);
+pub struct CompletionSender {
+    sender: SyncSender<Completion>,
+    faulted: Arc<AtomicBool>,
+}
 
 impl CompletionSender {
+    /// Observe a sticky reserved-slot invariant fault, independent of event or
+    /// completion capacity. The owner must quarantine, not treat it as cancel.
+    #[must_use]
+    pub fn faulted(&self) -> bool {
+        self.faulted.load(Ordering::Acquire)
+    }
+
     /// Create a callback handle for a newly registered request identity.
     #[must_use]
     pub fn request(&self, id: RequestId) -> CallbackIngress {
         CallbackIngress {
             id,
             claimed: Arc::new(AtomicBool::new(false)),
-            sender: self.0.clone(),
+            sender: self.sender.clone(),
+            faulted: Arc::clone(&self.faulted),
         }
     }
 }
@@ -79,6 +97,7 @@ impl CallbackIngress {
             Some(CompletionClaim {
                 id: self.id,
                 sender: self.sender.clone(),
+                faulted: Arc::clone(&self.faulted),
             })
         }
     }
@@ -89,6 +108,7 @@ impl CallbackIngress {
 pub struct CompletionClaim {
     id: RequestId,
     sender: SyncSender<Completion>,
+    faulted: Arc<AtomicBool>,
 }
 
 impl CompletionClaim {
@@ -100,7 +120,10 @@ impl CompletionClaim {
             payload,
         }) {
             Ok(()) => Publish::Delivered,
-            Err(TrySendError::Full(_)) => Publish::Full,
+            Err(TrySendError::Full(_)) => {
+                self.faulted.store(true, Ordering::Release);
+                Publish::Full
+            }
             Err(TrySendError::Disconnected(_)) => Publish::Disconnected,
         }
     }

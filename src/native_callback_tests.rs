@@ -74,6 +74,31 @@ fn native_entry_rejects_nonmain_without_creating_runtime() {
 }
 
 #[test]
+fn production_blocks_preserve_sticky_completion_overflow() {
+    let (sender, receiver) = completion_channel();
+    let first = session_block(sender.request(RequestId(20)));
+    let second = session_block(sender.request(RequestId(21)));
+    first.call((ptr::null_mut(),));
+    second.call((ptr::null_mut(),));
+    assert!(sender.faulted());
+    assert_eq!(receiver.try_recv().unwrap().id, RequestId(20));
+    assert!(sender.faulted()); // Draining the occupied slot does not erase fault.
+
+    let (sender, _receiver) = completion_channel();
+    let first = session_block(sender.request(RequestId(22)));
+    first.call((ptr::null_mut(),));
+    let data = NSData::with_bytes(&[]);
+    // SAFETY: Both callback arguments are the same live immutable empty NSData.
+    let ptp = unsafe { ptp_block(sender.request(RequestId(23))) };
+    ptp.call((
+        NonNull::from(&*data),
+        NonNull::from(&*data),
+        ptr::null_mut(),
+    ));
+    assert!(sender.faulted());
+}
+
+#[test]
 fn ptp_block_copies_owned_response_and_data() {
     let (sender, receiver) = completion_channel();
     // SAFETY: The sole invocation below uses immutable live NSData objects.

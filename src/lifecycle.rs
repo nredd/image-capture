@@ -70,6 +70,7 @@ impl Lifecycle {
         self.phase
     }
 
+    /// Consume monotonic identity before state transitions, never wrapping.
     fn admit(&mut self, id: RequestId) -> Result<(), TransitionError> {
         if id.0 <= self.last_id {
             return Err(TransitionError::InvalidIdentity);
@@ -116,6 +117,13 @@ impl Lifecycle {
         }
     }
 
+    /// Whether stable open state still requires cleanup, including a caller
+    /// close that was withdrawn before native submission.
+    #[must_use]
+    pub fn needs_close(&self) -> bool {
+        self.phase == Phase::Open && self.close_requested
+    }
+
     /// Register a close before native submission.
     ///
     /// # Errors
@@ -134,9 +142,20 @@ impl Lifecycle {
     pub fn disconnect(&mut self) {
         self.disconnected = true;
         self.close_requested = true;
-        if self.phase == Phase::Open {
+        if matches!(self.phase, Phase::Idle | Phase::Open) {
             self.phase = Phase::Quarantined;
         }
+    }
+
+    /// Withdraw a registered operation ONLY when the backend proves it was never
+    /// submitted. Caller wait expiry is not such proof and must never call this.
+    /// Identity remains consumed; cleanup close intent survives withdrawal.
+    pub fn withdraw(&mut self, id: RequestId) {
+        self.phase = match self.phase {
+            Phase::Opening(active) if active == id => Phase::Idle,
+            Phase::Command(active) | Phase::Closing(active) if active == id => Phase::Open,
+            phase => phase,
+        };
     }
 
     /// Settle the matching operation; stale and duplicate identities are ignored.

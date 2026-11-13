@@ -1,7 +1,7 @@
 //! Controlled tests exercise the production driver, not a parallel lifecycle mock.
 use crate::{
     client::{Client, DeviceId, Error, Operation, Reply, Request, Timeout},
-    driver::{Backend, Driver, decode_command},
+    driver::{Admission, Backend, Driver, decode_command},
     events::event_channel,
     ingress::{CallbackIngress, CompletionSender, completion_channel},
     lifecycle::{Phase, RequestId},
@@ -54,8 +54,15 @@ impl Backend for Controlled {
             Err(Error::NotFound)
         }
     }
-    fn open(&mut self, id: RequestId, sender: &CompletionSender) {
+    fn open(
+        &mut self,
+        id: RequestId,
+        sender: &CompletionSender,
+        admission: Admission<'_>,
+    ) -> Result<(), Error> {
+        admission.check()?;
         self.submit("open", id, sender);
+        Ok(())
     }
     fn validate_command(&self) -> Result<(), Error> {
         Ok(())
@@ -66,13 +73,25 @@ impl Backend for Controlled {
         sender: &CompletionSender,
         command: &[u8],
         outgoing: &[u8],
-    ) {
+        admission: Admission<'_>,
+    ) -> Result<(), Error> {
         self.inputs.extend_from_slice(command);
         self.inputs.extend_from_slice(outgoing);
+        admission.check()?;
         self.submit("command", id, sender);
+        Ok(())
     }
-    fn close(&mut self, id: RequestId, sender: &CompletionSender) {
+    fn close(
+        &mut self,
+        id: RequestId,
+        sender: &CompletionSender,
+        admission: Option<Admission<'_>>,
+    ) -> Result<(), Error> {
+        if let Some(admission) = admission {
+            admission.check()?;
+        }
         self.submit("close", id, sender);
+        Ok(())
     }
     fn settled(&mut self) {
         self.callback = None;
@@ -353,6 +372,148 @@ fn owned_client_discovers_executes_closes_and_reopens() {
             "open", "command", "close", "release", "open", "command", "close", "release"
         ]
     );
+}
+
+#[test]
+fn timeout_after_reply_publication_retires_lease() {
+    let mut h = Harness::new();
+    let (reply, abandoned) = h.request(Operation::Open(id(), Arc::new(AtomicBool::new(false))));
+    // recv_timeout has decided Timeout, but the receiver is still alive and its
+    // worker has not yet published abandonment. Owner delivery wins this gap.
+    h.complete(vec![0]);
+    assert_eq!(h.driver.lifecycle.phase(), Phase::Open);
+    assert!(h.driver.pending.is_none());
+    abandoned.store(true, Ordering::Release);
+    drop(reply);
+    h.tick();
+    assert!(matches!(h.driver.lifecycle.phase(), Phase::Closing(_)));
+    h.complete(vec![0]);
+    h.open(); // No worker shutdown is needed to recover from the expired open.
+    assert_eq!(h.driver.lifecycle.phase(), Phase::Open);
+}
+
+#[test]
+fn command_timeout_after_reply_publication_retires_without_shutdown() {
+    let mut h = Harness::new();
+    h.open();
+    let (reply, abandoned) = h.request(Operation::Command(vec![1], vec![2]));
+    let mut payload = vec![0, 12, 0, 0, 0];
+    payload.extend([12, 0, 0, 0, 3, 0, 1, 32, 0, 0, 0, 0, 7]);
+    h.complete(payload);
+    assert_eq!(h.driver.lifecycle.phase(), Phase::Open);
+    assert!(h.driver.pending.is_none());
+    // Successful native result is queued, then the worker finalizes Timeout.
+    abandoned.store(true, Ordering::Release);
+    drop(reply);
+    h.tick();
+    assert!(matches!(h.driver.lifecycle.phase(), Phase::Closing(_)));
+    assert_eq!(h.driver.backend.inputs, [] as [u8; 0]);
+    h.complete(vec![0]);
+    h.open();
+    assert_eq!(h.driver.lifecycle.phase(), Phase::Open);
+}
+
+#[test]
+fn stale_tick_timestamp_cannot_admit_expired_open() {
+    let mut h = Harness::new();
+    let now = Instant::now();
+    let (reply, received) = mpsc::sync_channel(1);
+    h.sender
+        .try_send(Request {
+            operation: Operation::Open(id(), Arc::new(AtomicBool::new(false))),
+            admit_by: now.checked_sub(Duration::from_secs(1)).unwrap(),
+            abandoned: Arc::new(AtomicBool::new(false)),
+            reply,
+        })
+        .unwrap();
+    // Tick sampled before admission expired; native preparation happens later.
+    h.driver
+        .tick(now.checked_sub(Duration::from_secs(2)).unwrap());
+    assert!(matches!(
+        received.try_recv(),
+        Ok(Err(Error::AdmissionExpired))
+    ));
+    assert!(!h.driver.backend.calls.contains(&"open"));
+    assert_eq!(h.driver.lifecycle.phase(), Phase::Idle);
+}
+
+#[test]
+fn timeout_interest_survives_immediate_command_retry() {
+    let mut h = Harness::new();
+    h.open();
+    let (reply, abandoned) = h.request(Operation::Command(vec![1], vec![2]));
+    h.complete(vec![1]);
+    abandoned.store(true, Ordering::Release);
+    drop(reply);
+    let (reply, received) = mpsc::sync_channel(1);
+    // Model a fresh request arriving after tick's first closing sample. The
+    // driver's post-receive admission must not replace the old timeout token.
+    h.driver.admit(
+        Request {
+            operation: Operation::Command(vec![1], vec![]),
+            admit_by: Instant::now() + Duration::from_secs(1),
+            abandoned: Arc::new(AtomicBool::new(false)),
+            reply,
+        },
+        Instant::now(),
+    );
+    assert!(matches!(received.try_recv(), Ok(Err(Error::Busy))));
+    h.tick();
+    assert!(matches!(h.driver.lifecycle.phase(), Phase::Closing(_)));
+    h.complete(vec![0]);
+    h.open();
+}
+
+#[test]
+fn stale_tick_timestamp_cannot_admit_expired_command_or_close() {
+    let mut h = Harness::new();
+    h.open();
+    for operation in [Operation::Command(vec![1], vec![2]), Operation::Close] {
+        let now = Instant::now();
+        let (reply, received) = mpsc::sync_channel(1);
+        h.sender
+            .try_send(Request {
+                operation,
+                admit_by: now.checked_sub(Duration::from_secs(1)).unwrap(),
+                abandoned: Arc::new(AtomicBool::new(false)),
+                reply,
+            })
+            .unwrap();
+        h.driver
+            .tick(now.checked_sub(Duration::from_secs(2)).unwrap());
+        assert!(matches!(
+            received.try_recv(),
+            Ok(Err(Error::AdmissionExpired))
+        ));
+        assert_eq!(h.driver.backend.calls, ["open"]);
+        assert_eq!(h.driver.backend.inputs, [] as [u8; 0]);
+        assert_eq!(h.driver.lifecycle.phase(), Phase::Open);
+    }
+    // A withdrawn caller close still requests a separate no-deadline cleanup.
+    h.tick();
+    assert_eq!(h.driver.backend.calls, ["open", "close"]);
+}
+
+#[test]
+fn completion_overflow_reports_fault_without_releasing_pending() {
+    let mut h = Harness::new();
+    let (reply, _) = h.request(Operation::Open(id(), Arc::new(AtomicBool::new(false))));
+    // Violate the reserved-slot invariant deliberately. Real callback must not
+    // silently disappear or free unresolved native ownership after this fault.
+    let _ = h
+        .driver
+        .sender
+        .request(RequestId(999))
+        .claim()
+        .unwrap()
+        .publish(vec![0]);
+    h.complete(vec![0]);
+    assert!(matches!(reply.try_recv(), Ok(Err(Error::CallbackFailure))));
+    assert!(h.driver.pending.is_some());
+    h.driver.stop();
+    h.tick();
+    assert!(!h.driver.finished());
+    assert_eq!(h.driver.backend.calls, ["open"]);
 }
 
 #[test]

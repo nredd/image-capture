@@ -1,7 +1,8 @@
 //! Bounded PTP command and response container framing.
 //!
-//! `ImageCaptureCore` returns response and data as separate buffers. Transaction
-//! identifiers in responses are opaque and need not equal submitted identifiers.
+//! The adapter interprets ICC's first callback buffer as data and second as a
+//! PTP response. This is a per-device validation hypothesis, not a header-proven
+//! universal guarantee. Response transaction IDs are opaque, not matched to commands.
 #![forbid(unsafe_code)]
 
 use std::fmt;
