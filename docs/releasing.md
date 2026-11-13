@@ -15,7 +15,7 @@ publishes `0.1.0` manually from the protected-`main` commit that was admitted:
 - Run `make all` and `cargo publish --dry-run --locked` on that exact commit, clean tree
 - `cargo login` with a short-lived, publish-new-crate scoped token, then `cargo publish --locked`
 - Revoke the token and remove the local Cargo login afterwards
-- Do not create a tag for `0.1.0` that the workflow would then try to publish again. Create the GitHub release by hand from the exact published archive if wanted, see recovery below
+- Do NOT push a `v0.1.0` tag and do not create a GitHub release for `0.1.0`. A `v*` tag triggers the `Release` workflow, whose `publish` job would fail because the version already exists. The first tagged and workflow-published release is the next version
 
 ## After the first publication
 
