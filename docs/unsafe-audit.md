@@ -1,6 +1,6 @@
 # Native unsafe inventory
 
-Candidate inventory, NOT independent approval. Hardware entry remains prohibited until the parent auditor admits an exact signed candidate. `native-contract.md` is the normative ownership contract. Portable `client`, `driver`, `framing`, `events`, `ingress` and `lifecycle` modules each forbid unsafe code. No native object has an unsafe Send/Sync implementation; no safety lint is waived.
+This is the unsafe-site inventory that an AI-assisted independent source review (not a certification or formal audit) was run against at source `21df87991d833cd046fd5f9b74cd7451ab0aa257`; `src/` is byte-identical since then. Hardware execution still requires explicit owner admission. `native-contract.md` is the normative ownership contract. Portable `client`, `driver`, `framing`, `events`, `ingress` and `lifecycle` modules each forbid unsafe code. No native object has an unsafe Send/Sync implementation; no safety lint is waived.
 
 ## Selected sources and build
 
@@ -11,7 +11,7 @@ Candidate inventory, NOT independent approval. Hardware entry remains prohibited
 
 ## Unsafe site map
 
-Every unsafe expression, impl and method annotation is covered below. Function/selector anchors remain stable across formatting; `grep -n unsafe src/native*.rs` supplies exact candidate line numbers. All entries await independent review.
+Every unsafe expression, impl and method annotation is covered below. Function/selector anchors remain stable across formatting; `grep -n unsafe src/native*.rs` supplies exact candidate line numbers. The AI-assisted source review covered these entries; it is not a certification or formal audit.
 
 | Site | Exact obligation and source |
 | --- | --- |

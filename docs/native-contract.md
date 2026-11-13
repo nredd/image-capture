@@ -1,6 +1,6 @@
 # Native boundary contract
 
-This contract is implemented by the macOS native adapter and shared portable driver. It is not independent audit approval or evidence of hardware validation.
+This contract is implemented by the macOS native adapter and shared portable driver. An AI-assisted independent source review (not a certification or formal audit) covered it, and one short real-camera sample was run (see `README.md`). Neither is broad hardware validation.
 
 - Only one native runtime may be created per process. The native owner stays on the main thread and never crosses a `Send` or `Sync` boundary. A bounded process-lifetime delegate proxy holds only a disconnectable ingress; browser and device delegate properties are unretained. Browser stop and session close are not assumed to drain callbacks.
 - Open, command and close use distinct request-specific heap blocks. Each block captures only owned thread-safe ingress, immutable identity and once-consumption state. Install owner request state before submission, including reentrant completion. Delegates never settle a request. Completion capacity is separate from events; an unexpected full completion slot records a sticky invariant fault visible to the owner independently of queue capacity. The owner reports failure and quarantines without releasing unresolved native state.
@@ -10,7 +10,7 @@ This contract is implemented by the macOS native adapter and shared portable dri
 - The design trusts Apple's asynchronous API to maintain valid ownership for every invocation, including concurrent final block release. The headers do not separately document the exact block retain duration. Foreign framework retention and framework-internal allocations are not bounded by this wrapper.
 - Native admission rechecks a fresh clock after native input/block preparation and immediately before the selector. Definite-not-submitted errors can withdraw registered state and release preparations; caller timeout never authorizes withdrawal of submitted work. Cleanup close remains deadline-free.
 - Callback data/response ordering and PTP-container interpretation are per-device validation hypotheses to test during admitted read-only trials, not universal guarantees from header names.
-- The selected build SDK, toolchain, deployment target, dependency versions, every unsafe expression and implementation, ABI, nullability, selector, pointer/buffer lifetime, callback thread, delegate lifetime and input-retention invariant require an independent source-backed audit before hardware use.
+- The selected build SDK, toolchain, deployment target, dependency versions, every unsafe expression and implementation, ABI, nullability, selector, pointer/buffer lifetime, callback thread, delegate lifetime and input-retention invariant are the invariants that source review covered. Any change to them (SDK, toolchain, deployment target, dependency versions, unsafe sites, ABI and so on) needs renewed independent source-backed review before hardware use.
 
 References:
 - [Apple ImageCaptureCore](https://developer.apple.com/documentation/imagecapturecore)
