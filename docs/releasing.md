@@ -19,7 +19,7 @@ publishes `0.1.0` manually from a reviewed, gated commit on protected `main`. Th
 
 ## After the first publication
 
-- On crates.io, add a GitHub trusted publisher: repository `nredd/icc-ptp-safe`, workflow
+- On crates.io, add a GitHub trusted publisher: repository `nredd/image-capture`, workflow
   filename `release.yml`, environment `crates-io`
 - Enable **Require trusted publishing** so no token can publish. Keep a direct individual owner
   with a verified email and linked GitHub account; do not add an Actions bot as owner

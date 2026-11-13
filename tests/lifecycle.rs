@@ -1,5 +1,5 @@
 //! Observable portable lifecycle scenarios.
-use icc_ptp_safe::lifecycle::{Action, Lifecycle, Phase, RequestId as Id, TransitionError};
+use image_capture::lifecycle::{Action, Lifecycle, Phase, RequestId as Id, TransitionError};
 
 #[test]
 fn late_open_closes_only_after_completion() {

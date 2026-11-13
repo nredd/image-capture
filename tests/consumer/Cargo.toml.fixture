@@ -5,4 +5,4 @@ edition = "2024"
 publish = false
 
 [dependencies]
-icc-ptp-safe = { path = "../icc-ptp-safe-0.1.0" }
+image-capture = { path = "../image-capture-0.1.0" }

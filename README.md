@@ -1,6 +1,6 @@
-# icc-ptp-safe
+# image-capture
 
-Experimental Rust ImageCaptureCore boundary. The macOS adapter implements discovery, exact selection, owned session leases, serialized PTP, bounded advisory events, close and same-runtime reopen.
+Safe, owned ImageCaptureCore camera sessions over PTP for macOS. This crate is a safe owned-session layer built on the `objc2-image-capture-core` bindings. It covers camera discovery and PTP sessions only, not the whole framework, and is not affiliated with the unrelated older `image-capture-core` crate. It is experimental. The macOS adapter implements discovery, exact selection, owned session leases, serialized PTP, bounded advisory events, close and same-runtime reopen.
 
 Established so far:
 

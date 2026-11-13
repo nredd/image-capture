@@ -3,7 +3,7 @@
 
 #[cfg(target_os = "macos")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use icc_ptp_safe::{
+    use image_capture::{
         client::{DeviceId, Error, Timeout},
         native,
     };

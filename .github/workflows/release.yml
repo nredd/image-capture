@@ -16,7 +16,7 @@ env:
 jobs:
   gate:
     # Ignore fork tags; only version tags in this repository can reach publication.
-    if: github.repository == 'nredd/icc-ptp-safe' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'nredd/image-capture' && startsWith(github.ref, 'refs/tags/v')
     # macOS on purpose: the ImageCaptureCore code only compiles there, `make all` runs its
     # controlled native tests, and `cargo publish` verification builds for the host. A Linux
     # runner would verify only the portable modules.

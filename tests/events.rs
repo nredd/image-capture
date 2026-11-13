@@ -1,5 +1,5 @@
 //! Event overflow and completion reservation tests.
-use icc_ptp_safe::{
+use image_capture::{
     events::{Event, EventPublish, event_channel},
     ingress::{Publish, completion_channel},
     lifecycle::RequestId,

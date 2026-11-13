@@ -1,5 +1,5 @@
 //! Callback ingress concurrency and bounded-capacity tests.
-use icc_ptp_safe::{
+use image_capture::{
     ingress::{Publish, completion_channel},
     lifecycle::RequestId,
 };
