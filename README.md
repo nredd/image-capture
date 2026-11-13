@@ -5,7 +5,7 @@ Safe, owned ImageCaptureCore camera sessions over PTP for macOS. This crate is a
 Established so far:
 
 - An AI-assisted independent source review of the native code. The unsafe-site inventory is `docs/unsafe-audit.md`. This is NOT a certification or a formal audit
-- ONE short real-camera sample at source `21df87991d833cd046fd5f9b74cd7451ab0aa257` (tree-identical to main commit `69d36260c52719d8b6764aeb3fbe36a6858df3dc`; `src/`, `tests/`, `examples/` and `Cargo.lock` are unchanged since then, while README, manifest metadata, docs and CI differ): discovery found one candidate, then two open / GetDeviceInfo (operation `0x1001`, response `0x2001`) / confirmed-close cycles ran in one process, with a same-process reopen. The runtime joined and the Apple camera helpers were left untouched
+- ONE short real-camera sample at source `21df87991d833cd046fd5f9b74cd7451ab0aa257` (tree-identical to main commit `69d36260c52719d8b6764aeb3fbe36a6858df3dc`; `src/` is byte-identical since then, `tests/`, `examples/` and `Cargo.lock` differ only by the crate rename, while README, manifest metadata, docs and CI also differ): discovery found one candidate, then two open / GetDeviceInfo (operation `0x1001`, response `0x2001`) / confirmed-close cycles ran in one process, with a same-process reopen. The runtime joined and the Apple camera helpers were left untouched
 
 Everything else is unverified, see the limits below. No production support claim follows.
 

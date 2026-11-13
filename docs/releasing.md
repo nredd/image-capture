@@ -10,7 +10,7 @@ crate for the host. The `gate` and `publish` jobs therefore run on `macos-latest
 ## First version, by hand
 
 Crates.io requires an existing crate before a trusted publisher can be configured, so the owner
-publishes `0.1.0` manually from a reviewed, gated commit on protected `main`. That commit need not be the one the hardware sample ran on; the README states what is unchanged since it:
+publishes `0.1.0` manually from a reviewed, gated commit on protected `main`. That commit need not be the one the hardware sample ran on; the README states how the published tree differs from it:
 
 - Run `make all` and `cargo publish --dry-run --locked` on that exact commit, clean tree
 - `cargo login` with a short-lived, publish-new-crate scoped token, then `cargo publish --locked`
