@@ -20,9 +20,14 @@ jobs:
     # macOS on purpose: the ImageCaptureCore code only compiles there, `make all` runs its
     # controlled native tests, and `cargo publish` verification builds for the host. A Linux
     # runner would verify only the portable modules.
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
+      - name: Runner is macOS 27 (xcode-27 image)
+        run: |
+          sw_vers
+          xcodebuild -version
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 27
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
@@ -55,13 +60,18 @@ jobs:
   publish:
     needs: gate
     # macOS for the same reason as `gate`: publish verification compiles the crate for the host.
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 20
     environment: crates-io
     permissions:
       contents: read
       id-token: write # Only this job can exchange a crates.io OIDC identity.
     steps:
+      - name: Runner is macOS 27 (xcode-27 image)
+        run: |
+          sw_vers
+          xcodebuild -version
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 27
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}

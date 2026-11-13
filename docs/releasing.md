@@ -5,7 +5,7 @@ The tag-only `Release` workflow publishes to crates.io with
 containing the verified source `.crate` archive. No registry token secret belongs in GitHub.
 
 The native code only compiles on macOS, and `cargo publish` verifies by building the packaged
-crate for the host. The `gate` and `publish` jobs therefore run on `macos-latest`, not Linux.
+crate for the host. The `gate` and `publish` jobs therefore run on the `xcode-27` image (macOS 27 with Xcode 27, arm64, GitHub public preview), not Linux. Each job fails unless the OS major is 27. This workflow has not yet executed; its first run is the first tag.
 
 ## First version, by hand
 
